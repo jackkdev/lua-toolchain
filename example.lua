@@ -23,3 +23,5 @@ local function do_something(...)
     end
   end
 end
+
+local test = 0001
