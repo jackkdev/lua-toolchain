@@ -1,4 +1,4 @@
-use crate::span::Pos;
+use crate::span::{Pos, Span};
 
 pub struct Iter<'data> {
     data: &'data [u8],
@@ -9,8 +9,7 @@ pub struct Iter<'data> {
     row: usize,
 }
 
-impl<'data> Iter<'data>
-{
+impl<'data> Iter<'data> {
     pub fn from_slice(data: &'data [u8]) -> Self {
         Self {
             data,
@@ -33,31 +32,59 @@ impl<'data> Iter<'data>
         self.index += 1;
     }
 
-    pub fn take(&mut self) -> Option<u8> {
+    pub fn take_many(&mut self, n: usize) -> (Vec<u8>, Span) {
+        let mut items = vec![];
+
+        let start = self.pos();
+        let mut end = start;
+
+        for _ in 0..n {
+            let c = match self.take() {
+                Some(c) => c,
+                None => break,
+            };
+
+            end = c.1;
+
+            items.push(c.0);
+        }
+
+        (items, Span::new(start, end))
+    }
+
+    pub fn take(&mut self) -> Option<(u8, Pos)> {
         if self.index >= self.data.len() {
             None
         } else {
             let item = self.data[self.index].clone();
+            let pos = self.pos();
+
             self.advance();
 
-            Some(item)
+            Some((item, pos))
         }
     }
 
-    pub fn peek(&self) -> Option<u8> {
-        if self.index >= self.data.len() {
+    pub fn peekn(&self, n: usize) -> Option<(u8, Pos)> {
+        if self.index + n >= self.data.len() {
             None
         } else {
-            Some(self.data[self.index])
+            Some((self.data[self.index + n], self.pos()))
         }
     }
 
-    pub fn take_while<F>(&mut self, f: F) -> (Vec<u8>, Pos)
-        where
-            F: Fn(u8) -> bool,
+    pub fn peek(&self) -> Option<(u8, Pos)> {
+        self.peekn(0)
+    }
+
+    pub fn take_while<F>(&mut self, f: F) -> (Vec<u8>, Span)
+    where
+        F: Fn(u8) -> bool,
     {
         let mut items = vec![];
-        let mut end = Pos::default();
+
+        let start = self.pos();
+        let mut end = start;
 
         loop {
             if self.index >= self.data.len() {
@@ -77,16 +104,7 @@ impl<'data> Iter<'data>
             items.push(item.clone())
         }
 
-        (items, end)
-    }
-
-
-    pub fn col(&self) -> usize {
-        self.col
-    }
-
-    pub fn row(&self) -> usize {
-        self.row
+        (items, Span::new(start, end))
     }
 
     pub fn pos(&self) -> Pos {

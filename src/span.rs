@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
 pub struct Span {
     start: Pos,
@@ -6,10 +8,7 @@ pub struct Span {
 
 impl Span {
     pub fn new(start: Pos, end: Pos) -> Self {
-        Self {
-            start,
-            end,
-        }
+        Self { start, end }
     }
 
     pub fn start(&self) -> Pos {
@@ -31,12 +30,7 @@ pub struct Pos {
 
 impl Pos {
     pub fn new(offset: usize, col: usize, row: usize) -> Self {
-        Self {
-            offset,
-
-            col,
-            row
-        }
+        Self { offset, col, row }
     }
 
     pub fn offset(&self) -> usize {
@@ -56,9 +50,15 @@ impl Default for Pos {
     fn default() -> Self {
         Self {
             offset: 0,
-            
+
             col: 0,
             row: 0,
         }
+    }
+}
+
+impl Display for Pos {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.col, self.row)
     }
 }

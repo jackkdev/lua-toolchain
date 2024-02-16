@@ -25,3 +25,11 @@ local function do_something(...)
 end
 
 local test = 0001
+
+local example = [==[
+    example test
+
+    "test"
+
+    ]=]
+]==]
