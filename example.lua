@@ -24,7 +24,7 @@ local function do_something(...)
   end
 end
 
-local test = 0001
+local test = false
 
 local example = [==[
     example test
@@ -33,3 +33,6 @@ local example = [==[
 
     ]=]
 ]==]
+
+_13 = print((function()(function() return setmetatable({}, {__index=function() return (1+3-4+(function()return #[=[ ]] ]==] ]= ] ]= =] ]==] [=] ]=] end)())()[1] end}) end)()end)()) or 1 - 3--a­ \
+print(123, #{...})
