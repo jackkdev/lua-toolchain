@@ -24,6 +24,8 @@ local function do_something(...)
   end
 end
 
+local a = x.b
+
 local test = false
 
 local example = [==[

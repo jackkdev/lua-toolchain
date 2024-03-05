@@ -1,5 +1,6 @@
 use crate::span::{Pos, Span};
 
+#[derive(Debug)]
 pub struct FileIter<'data> {
     data: &'data [u8],
 

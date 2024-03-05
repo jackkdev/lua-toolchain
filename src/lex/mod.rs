@@ -8,10 +8,10 @@ pub mod token;
 
 use thiserror::Error;
 
+pub use crate::lex::token::*;
 use crate::{
     lex::{
         file_iter::FileIter,
-        token::{Comment, Keyword, NumberLiteral, Operator, StringLiteral, Token},
         LexError::{MalformedLongString, MalformedNumber, Utf8},
     },
     span::{Pos, Span},
@@ -42,8 +42,10 @@ pub type LexResult<T> = Result<T, LexError>;
 /// The lexical analyzer implementation.
 ///
 /// This struct wraps a slice of bytes and provides [`Lex::take`] for iterating over tokens.
+#[derive(Debug)]
 pub struct Lex<'data> {
     iter: FileIter<'data>,
+    buffer: Vec<(Token, Span)>,
 }
 
 impl<'data> Lex<'data> {
@@ -51,11 +53,38 @@ impl<'data> Lex<'data> {
     pub fn from_slice(data: &'data [u8]) -> Self {
         Self {
             iter: FileIter::from_slice(data),
+            buffer: vec![],
         }
     }
 
-    /// Returns the next token found in the data.
+    pub fn peek(&mut self) -> LexResult<Option<(Token, Span)>> {
+        if self.buffer.len() > 0 {
+            Ok(Some(self.buffer[0].clone()))
+        } else {
+            let spanned_token = self.take_internal()?;
+
+            let spanned_token = match spanned_token {
+                Some(inner) => {
+                    self.buffer.push(inner.clone());
+                    inner
+                }
+                None => return Ok(None),
+            };
+
+            Ok(Some(spanned_token))
+        }
+    }
+
     pub fn take(&mut self) -> LexResult<Option<(Token, Span)>> {
+        if self.buffer.len() > 0 {
+            let token = self.buffer.remove(0);
+            Ok(Some(token))
+        } else {
+            self.take_internal()
+        }
+    }
+
+    fn take_internal(&mut self) -> LexResult<Option<(Token, Span)>> {
         // Skip white-space.
         self.iter.take_while(|c| c.is_ascii_whitespace());
 
@@ -103,7 +132,7 @@ impl<'data> Lex<'data> {
                     return Ok(Some((Token::Operator(operator), span)));
                 }
 
-                Ok(Some((Token::Identifier(value), span)))
+                Ok(Some((Token::Identifier(Name(value)), span)))
             }
             (Some(c1c), _) => {
                 let (_, pos) = self.iter.take().unwrap();
@@ -114,6 +143,7 @@ impl<'data> Lex<'data> {
                     b';' => Some((Token::SemiColon, span1)),
                     b':' => Some((Token::Colon, span1)),
                     b'=' => Some((Token::Assign, span1)),
+                    b'.' => Some((Token::Dot, span1)),
                     b'[' => Some((Token::SquareBrace(true), span1)),
                     b']' => Some((Token::SquareBrace(false), span1)),
                     b'{' => Some((Token::CurlyBrace(true), span1)),

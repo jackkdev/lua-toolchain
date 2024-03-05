@@ -1,12 +1,12 @@
 /// Represents a "token" or building block of the language syntax.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     StringLiteral(StringLiteral),
     NumberLiteral(NumberLiteral),
     BooleanLiteral(bool),
     NilLiteral,
 
-    Identifier(String),
+    Identifier(Name),
     Keyword(Keyword),
     Operator(Operator),
 
@@ -14,6 +14,7 @@ pub enum Token {
     SemiColon,
     Colon,
     Assign,
+    Dot,
 
     Vararg,
 
@@ -25,7 +26,7 @@ pub enum Token {
 }
 
 /// Represents any string literal token.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StringLiteral {
     Single(String),
     Double(String),
@@ -33,12 +34,15 @@ pub enum StringLiteral {
 }
 
 /// Represents any number literal token.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum NumberLiteral {
     Decimal(f64),
     Hexadecimal(f64),
     Scientific(f64, f64),
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Name(pub String);
 
 impl NumberLiteral {
     /// Returns the internal value of the literal.
@@ -51,14 +55,14 @@ impl NumberLiteral {
 }
 
 /// Represents any comment.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Comment {
     Single(String),
     Block(String, usize),
 }
 
 /// Represents one of the reserved keyword tokens.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Keyword {
     If,
     Else,
@@ -95,7 +99,7 @@ impl Keyword {
 }
 
 /// Represents any of the binary or unary operators.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Operator {
     And,
     Or,
