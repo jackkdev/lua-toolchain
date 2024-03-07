@@ -13,7 +13,7 @@ fn main() -> Result<()> {
         .with(fmt::layer())
         .init();
 
-    let data = include_str!("../example.lua");
+    let data = include_str!("../../../example.lua");
 
     let mut lex = Lex::from_slice(data.as_bytes());
 

@@ -91,15 +91,6 @@ impl<'data> Lex<'data> {
         // We'll peek ahead at the next two characters.
         let c1 = self.iter.peekn(0);
         let c2 = self.iter.peekn(1);
-        let c3 = self.iter.peekn(1);
-
-        match (c1, c2, c3) {
-            (Some(b'.'), Some(b'.'), Some(b'.')) => {
-                let (_, span) = self.iter.take_many(3);
-                return Ok(Some((Token::Vararg, span)));
-            }
-            _ => {}
-        }
 
         match (c1, c2) {
             (Some(b'\'' | b'\"'), _) => self.parse_string_literal().map(|inner| Some(inner)),
@@ -128,31 +119,27 @@ impl<'data> Lex<'data> {
                     return Ok(Some((Token::Keyword(keyword), span)));
                 }
 
-                if let Some(operator) = Operator::from_bytes(value.as_bytes()) {
-                    return Ok(Some((Token::Operator(operator), span)));
-                }
-
                 Ok(Some((Token::Identifier(Name(value)), span)))
             }
             (Some(c1c), _) => {
                 let (_, pos) = self.iter.take().unwrap();
 
-                let span1 = Span::new(pos, pos);
+                let span = Span::new(pos, pos);
                 if let Some(inner) = match c1c {
-                    b',' => Some((Token::Comma, span1)),
-                    b';' => Some((Token::SemiColon, span1)),
-                    b':' => Some((Token::Colon, span1)),
-                    b'=' => Some((Token::Assign, span1)),
-                    b'.' => Some((Token::Dot, span1)),
-                    b'[' => Some((Token::SquareBrace(true), span1)),
-                    b']' => Some((Token::SquareBrace(false), span1)),
-                    b'{' => Some((Token::CurlyBrace(true), span1)),
-                    b'}' => Some((Token::CurlyBrace(false), span1)),
-                    b'(' => Some((Token::Paren(true), span1)),
-                    b')' => Some((Token::Paren(false), span1)),
+                    b',' => Some(Token::Comma),
+                    b';' => Some(Token::SemiColon),
+                    b':' => Some(Token::Colon),
+                    b'=' => Some(Token::Assign),
+                    b'.' => Some(Token::Dot),
+                    b'[' => Some(Token::SquareBrace(true)),
+                    b']' => Some(Token::SquareBrace(false)),
+                    b'{' => Some(Token::CurlyBrace(true)),
+                    b'}' => Some(Token::CurlyBrace(false)),
+                    b'(' => Some(Token::Paren(true)),
+                    b')' => Some(Token::Paren(false)),
                     _ => None,
                 } {
-                    return Ok(Some(inner));
+                    return Ok(Some((inner, span)));
                 }
 
                 if let Some(c2c) = c2 {

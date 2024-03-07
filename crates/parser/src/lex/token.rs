@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// Represents a "token" or building block of the language syntax.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Token {
     StringLiteral(StringLiteral),
     NumberLiteral(NumberLiteral),
@@ -26,7 +28,7 @@ pub enum Token {
 }
 
 /// Represents any string literal token.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StringLiteral {
     Single(String),
     Double(String),
@@ -34,14 +36,14 @@ pub enum StringLiteral {
 }
 
 /// Represents any number literal token.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum NumberLiteral {
     Decimal(f64),
     Hexadecimal(f64),
     Scientific(f64, f64),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Name(pub String);
 
 impl NumberLiteral {
@@ -55,16 +57,17 @@ impl NumberLiteral {
 }
 
 /// Represents any comment.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Comment {
     Single(String),
     Block(String, usize),
 }
 
 /// Represents one of the reserved keyword tokens.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Keyword {
     If,
+    In,
     Else,
     ElseIf,
     Then,
@@ -76,12 +79,16 @@ pub enum Keyword {
     Local,
     Break,
     Return,
+    And,
+    Or,
+    Not
 }
 
 impl Keyword {
     pub(super) fn from_bytes(value: &[u8]) -> Option<Self> {
         Some(match value {
             b"if" => Self::If,
+            b"in" => Self::In,
             b"else" => Self::Else,
             b"elseif" => Self::ElseIf,
             b"then" => Self::Then,
@@ -93,18 +100,17 @@ impl Keyword {
             b"local" => Self::Local,
             b"break" => Self::Break,
             b"return" => Self::Return,
+            b"and" => Self::And,
+            b"or" => Self::Or,
+            b"not" => Self::Not,
             _ => return None,
         })
     }
 }
 
 /// Represents any of the binary or unary operators.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Operator {
-    And,
-    Or,
-    Not,
-
     Length,
 
     Equals,
@@ -136,10 +142,6 @@ pub enum Operator {
 impl Operator {
     pub(super) fn from_bytes(value: &[u8]) -> Option<Self> {
         Some(match value {
-            b"and" => Self::And,
-            b"or" => Self::Or,
-            b"not" => Self::Not,
-
             b"#" => Self::Length,
 
             b"==" => Self::Equals,

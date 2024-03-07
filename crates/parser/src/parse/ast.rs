@@ -1,17 +1,18 @@
+use serde::{Deserialize, Serialize};
 use crate::lex::token::{Name, NumberLiteral, StringLiteral};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Chunk {
     pub statements: Vec<Statement>,
     pub last_statement: Option<LastStatement>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Block {
     pub chunk: Chunk,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Statement {
     Set {
         variables: VariableList,
@@ -62,23 +63,23 @@ pub enum Statement {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum LastStatement {
     Return(ExpressionList),
     Break,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FunctionName {
     root: Name,
     additional: Vec<Name>,
     last: Option<Name>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VariableList(Vec<Variable>);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Variable {
     Name(Name),
     Index {
@@ -91,13 +92,13 @@ pub enum Variable {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NameList(pub Vec<Name>);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExpressionList(pub Vec<Expression>);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Expression {
     Nil,
     Bool(bool),
@@ -118,14 +119,14 @@ pub enum Expression {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum PrefixExpression {
     Variable(Variable),
     FunctionCall(FunctionCall),
     Expression(Box<Expression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum FunctionCall {
     Normal {
         prefix: Box<PrefixExpression>,
@@ -138,37 +139,37 @@ pub enum FunctionCall {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Args {
     List(ExpressionList),
     TableConstructor(TableConstructor),
     String(StringLiteral),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AnonymousFunction {
     pub body: FunctionBody,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FunctionBody {
     pub parameters: ParameterList,
     pub block: Block,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ParameterList {
     pub names: NameList,
     pub spread: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TableConstructor(pub FieldList);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FieldList(pub Vec<Field>);
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Field {
     Index {
         left: Box<Expression>,
@@ -181,8 +182,8 @@ pub enum Field {
     Expression(Box<Expression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum BinaryOperator {}
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum UnaryOperator {}
