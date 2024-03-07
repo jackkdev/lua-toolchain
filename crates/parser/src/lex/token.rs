@@ -10,19 +10,7 @@ pub enum Token {
 
     Identifier(Name),
     Keyword(Keyword),
-    Operator(Operator),
-
-    Comma,
-    SemiColon,
-    Colon,
-    Assign,
-    Dot,
-
-    Vararg,
-
-    Paren(bool),
-    SquareBrace(bool),
-    CurlyBrace(bool),
+    Other(Other),
 
     Comment(Comment),
 }
@@ -79,9 +67,11 @@ pub enum Keyword {
     Local,
     Break,
     Return,
+    Until,
+    End,
     And,
     Or,
-    Not
+    Not,
 }
 
 impl Keyword {
@@ -100,6 +90,8 @@ impl Keyword {
             b"local" => Self::Local,
             b"break" => Self::Break,
             b"return" => Self::Return,
+            b"until" => Self::Until,
+            b"end" => Self::End,
             b"and" => Self::And,
             b"or" => Self::Or,
             b"not" => Self::Not,
@@ -108,9 +100,9 @@ impl Keyword {
     }
 }
 
-/// Represents any of the binary or unary operators.
+/// Represents any other single, double, or triple character token.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum Operator {
+pub enum Other {
     Length,
 
     Equals,
@@ -137,37 +129,64 @@ pub enum Operator {
     BitwiseXorOrNegate,
     BitwiseRightShift,
     BitwiseLeftShift,
+
+    Comma,
+    SemiColon,
+    Colon,
+    Assign,
+    Dot,
+
+    Vararg,
+
+    Paren(bool),
+    SquareBrace(bool),
+    CurlyBrace(bool),
 }
 
-impl Operator {
-    pub(super) fn from_bytes(value: &[u8]) -> Option<Self> {
-        Some(match value {
-            b"#" => Self::Length,
+impl Other {
+    pub(super) fn from_byte(c1: u8) -> Option<Self> {
+        Some(match c1 {
+            b'#' => Self::Length,
 
-            b"==" => Self::Equals,
-            b"~=" => Self::NotEquals,
+            b'>' => Self::GreaterThan,
 
-            b">" => Self::GreaterThan,
-            b">=" => Self::GreaterThanEquals,
+            b'<' => Self::LessThan,
 
-            b"<" => Self::LessThan,
-            b"<=" => Self::LessThanEquals,
+            b'+' => Self::Add,
+            b'-' => Self::SubtractOrNegate,
+            b'*' => Self::Multiply,
+            b'/' => Self::FloatDivide,
+            b'^' => Self::Exponential,
+            b'%' => Self::Modulo,
 
-            b".." => Self::Concat,
+            b'&' => Self::BitwiseAnd,
+            b'|' => Self::BitwiseOr,
+            b'~' => Self::BitwiseXorOrNegate,
 
-            b"+" => Self::Add,
-            b"-" => Self::SubtractOrNegate,
-            b"*" => Self::Multiply,
-            b"/" => Self::FloatDivide,
-            b"//" => Self::FloorDivide,
-            b"^" => Self::Exponential,
-            b"%" => Self::Modulo,
+            b',' => Self::Comma,
+            b';' => Self::SemiColon,
+            b':' => Self::Colon,
+            b'=' => Self::Assign,
+            b'[' => Self::SquareBrace(true),
+            b']' => Self::SquareBrace(false),
+            b'{' => Self::CurlyBrace(true),
+            b'}' => Self::CurlyBrace(false),
+            b'(' => Self::Paren(true),
+            b')' => Self::Paren(false),
 
-            b"&" => Self::BitwiseAnd,
-            b"|" => Self::BitwiseOr,
-            b"~" => Self::BitwiseXorOrNegate,
-            b">>" => Self::BitwiseRightShift,
-            b"<<" => Self::BitwiseLeftShift,
+            _ => return None,
+        })
+    }
+
+    pub(super) fn from_bytes(c1: u8, c2: u8) -> Option<Self> {
+        Some(match (c1, c2) {
+            (b'=', b'=') => Self::Equals,
+            (b'~', b'=') => Self::NotEquals,
+            (b'>', b'=') => Self::GreaterThanEquals,
+            (b'<', b'=') => Self::LessThanEquals,
+            (b'/', b'/') => Self::FloorDivide,
+            (b'>', b'>') => Self::BitwiseRightShift,
+            (b'<', b'<') => Self::BitwiseLeftShift,
 
             _ => return None,
         })

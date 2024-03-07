@@ -32,8 +32,8 @@ pub enum LexError {
     #[error("Encountered an invalid escape sequence.")]
     InvalidEscapeSequence { span: Span },
 
-    #[error("Encountered a malformed number.")]
-    MalformedNumber { span: Span },
+    #[error("Encountered a malformed number: {message}")]
+    MalformedNumber { span: Span, message: String },
 }
 
 /// A result type used for [`Lex`].
@@ -121,41 +121,42 @@ impl<'data> Lex<'data> {
 
                 Ok(Some((Token::Identifier(Name(value)), span)))
             }
+            (Some(b'.'), _) => {
+                if Some(b'.') == c2 {
+                    if Some(b'.') == self.iter.peekn(2) {
+                        let (_, span) = self.iter.take_many(3);
+                        Ok(Some((Token::Other(Other::Vararg), span)))
+                    } else {
+                        let (_, span) = self.iter.take_many(2);
+                        Ok(Some((Token::Other(Other::Concat), span)))
+                    }
+                } else {
+                    let (_, pos) = self.iter.take().unwrap();
+                    Ok(Some((Token::Other(Other::Dot), Span::new(pos, pos))))
+                }
+            }
             (Some(c1c), _) => {
                 let (_, pos) = self.iter.take().unwrap();
 
-                let span = Span::new(pos, pos);
-                if let Some(inner) = match c1c {
-                    b',' => Some(Token::Comma),
-                    b';' => Some(Token::SemiColon),
-                    b':' => Some(Token::Colon),
-                    b'=' => Some(Token::Assign),
-                    b'.' => Some(Token::Dot),
-                    b'[' => Some(Token::SquareBrace(true)),
-                    b']' => Some(Token::SquareBrace(false)),
-                    b'{' => Some(Token::CurlyBrace(true)),
-                    b'}' => Some(Token::CurlyBrace(false)),
-                    b'(' => Some(Token::Paren(true)),
-                    b')' => Some(Token::Paren(false)),
-                    _ => None,
-                } {
-                    return Ok(Some((inner, span)));
-                }
-
                 if let Some(c2c) = c2 {
-                    let t2 = [c1c, c2c];
-                    if let Some(operator) = Operator::from_bytes(&t2) {
+                    if let Some(operator) = Other::from_bytes(c1c, c2c) {
                         let (_, pos2) = self.iter.take().unwrap();
                         let t2_span = Span::new(pos, pos2);
 
-                        return Ok(Some((Token::Operator(operator), t2_span)));
+                        return Ok(Some((Token::Other(operator), t2_span)));
                     }
                 }
 
-                let t1 = [c1c];
                 let t1_span = Span::new(pos, pos);
-                if let Some(operator) = Operator::from_bytes(&t1) {
-                    return Ok(Some((Token::Operator(operator), t1_span)));
+                if let Some(operator) = Other::from_byte(c1c) {
+                    return Ok(Some((Token::Other(operator), t1_span)));
+                }
+
+                let span = Span::new(pos, pos);
+                if let Some(inner) = match c1c {
+                    _ => None,
+                } {
+                    return Ok(Some((inner, span)));
                 }
 
                 Ok(None)
@@ -355,7 +356,10 @@ impl<'data> Lex<'data> {
         let span = Span::new(leading_span.start(), end);
 
         if characters.len() == 0 {
-            return Err(MalformedNumber { span });
+            return Err(MalformedNumber {
+                span,
+                message: String::from("Missing hexadecimal digits."),
+            });
         }
 
         let mut in_decimal = false;
@@ -367,7 +371,10 @@ impl<'data> Lex<'data> {
             if (!character.is_ascii_hexdigit() && !character == b'.')
                 || (character == b'.' && in_decimal)
             {
-                return Err(MalformedNumber { span });
+                return Err(MalformedNumber {
+                    span,
+                    message: format!("Unexpected character, '{}'.", character as char),
+                });
             }
 
             if character == b'.' {
@@ -384,7 +391,10 @@ impl<'data> Lex<'data> {
         }
 
         if in_decimal && decimal_digits.len() == 0 {
-            return Err(MalformedNumber { span });
+            return Err(MalformedNumber {
+                span,
+                message: String::from("Trailing decimal point."),
+            });
         }
 
         let value = characters_to_integer(16f64, &integer_digits)
@@ -396,105 +406,162 @@ impl<'data> Lex<'data> {
     }
 
     fn parse_decimal_literal(&mut self) -> LexResult<(Token, Span)> {
-        let (characters, span) = self
-            .iter
-            .take_while(|c| c.is_ascii_alphanumeric() || c == b'.' || c == b'_');
-        let mut i = 0;
+        // Read up until not alphanumeric, or if scientific, attempt to read sign.
+        let mut chars = vec![];
 
-        let mut integer_digits = vec![];
-        let mut decimal_digits = vec![];
-        let mut scientific_digits = vec![];
-        let mut scientific_sign = 1f64;
+        let start = self.iter.pos();
+        let mut end = start;
+
+        let mut accepts_sign = false;
 
         loop {
-            if i >= characters.len() {
+            let ch = match self.iter.peek() {
+                Some(ch) => ch,
+                None => break,
+            };
+
+            if !(ch.is_ascii_alphanumeric()
+                || ch == b'_'
+                || ch == b'.'
+                || (accepts_sign && ch == b'-'))
+            {
                 break;
             }
 
-            let c = characters[i];
+            if accepts_sign {
+                accepts_sign = false;
+            }
+
+            if ch == b'E' || ch == b'e' {
+                accepts_sign = true;
+            }
+
+            let (ch, pos) = self.iter.take().unwrap();
+            end = pos;
+
+            chars.push(ch);
+        }
+
+        let span = Span::new(start, end);
+
+        // Index into the characters vec.
+        let mut i = 0;
+
+        // Parse the integer portion of the number.
+        let mut integer_digits = vec![];
+
+        let mut try_decimal = false;
+
+        loop {
+            if i == chars.len() {
+                break;
+            }
+
+            let ch = chars[i];
             i += 1;
 
-            if c == b'.' || c == b'e' {
+            if ch == b'.' {
+                try_decimal = true;
                 break;
             }
 
-            if !c.is_ascii_digit() {
-                return Err(MalformedNumber { span });
+            if ch == b'e' {
+                break;
             }
 
-            integer_digits.push(c);
-        }
-
-        if characters[i - 1] == b'.' {
-            loop {
-                if i >= characters.len() {
-                    break;
-                }
-
-                let c = characters[i];
-                i += 1;
-
-                if c == b'e' {
-                    break;
-                }
-
-                if !c.is_ascii_digit() {
-                    return Err(MalformedNumber { span });
-                }
-
-                decimal_digits.push(c);
+            if !ch.is_ascii_digit() {
+                return Err(MalformedNumber {
+                    span,
+                    message: format!("{} is not a valid ascii digit", ch as char),
+                });
             }
+
+            integer_digits.push(ch);
         }
 
-        if characters[i - 1] == b'e' {
-            let mut first = true;
+        // Parse the decimal portion of the number.
+        let mut decimal_digits = vec![];
 
-            loop {
-                if i >= characters.len() {
-                    if scientific_digits.len() == 0 {
-                        return Err(MalformedNumber { span });
+        loop {
+            if !try_decimal {
+                break;
+            }
+
+            if i == chars.len() {
+                break;
+            }
+
+            let ch = chars[i];
+            i += 1;
+
+            if ch == b'e' || ch == b'E' {
+                break;
+            }
+
+            if !ch.is_ascii_digit() {
+                return Err(MalformedNumber {
+                    span,
+                    message: format!("{} is not a valid ascii digit", ch as char),
+                });
+            }
+
+            decimal_digits.push(ch);
+        }
+
+        // Parse the scientific portion of the number.
+        let mut scientific_digits = vec![];
+        let mut sign = 1.0;
+        let mut first = true;
+
+        loop {
+            if i == chars.len() {
+                break;
+            }
+
+            let ch = chars[i];
+            i += 1;
+
+            if first {
+                first = false;
+
+                let mut cont = true;
+                match ch {
+                    b'-' => sign = -1.0,
+                    b'+' => sign = 1.0,
+                    _ => {
+                        cont = false;
                     }
+                };
 
-                    break;
+                if cont {
+                    continue;
                 }
-
-                let c = characters[i];
-                i += 1;
-
-                if first {
-                    first = false;
-
-                    match c {
-                        b'-' => {
-                            scientific_sign = -1f64;
-                            continue;
-                        }
-                        _ => {}
-                    }
-                }
-
-                if !c.is_ascii_digit() {
-                    return Err(MalformedNumber { span });
-                }
-
-                scientific_digits.push(c);
             }
+
+            if !ch.is_ascii_digit() {
+                return Err(MalformedNumber {
+                    span,
+                    message: format!("{} is not a valid ascii digit", ch as char),
+                });
+            }
+
+            scientific_digits.push(ch);
         }
 
-        let value = characters_to_integer(10f64, &integer_digits)
-            + characters_to_decimal(10f64, &decimal_digits);
+        let result = characters_to_integer(10.0, &integer_digits)
+            + characters_to_decimal(10.0, &decimal_digits);
 
-        if scientific_digits.len() > 0 {
-            Ok((
+        Ok((
+            if scientific_digits.len() > 0 {
                 Token::NumberLiteral(NumberLiteral::Scientific(
-                    value,
-                    characters_to_integer(10f64, &scientific_digits) * scientific_sign,
-                )),
-                span,
-            ))
-        } else {
-            Ok((Token::NumberLiteral(NumberLiteral::Decimal(value)), span))
-        }
+                    result,
+                    characters_to_integer(10.0, &scientific_digits) * sign,
+                ))
+            } else {
+                Token::NumberLiteral(NumberLiteral::Decimal(result))
+            },
+            span,
+        ))
     }
 
     fn parse_comment(&mut self) -> LexResult<(Token, Span)> {
@@ -625,7 +692,7 @@ pub(super) fn characters_to_decimal(base: f64, digits: &[u8]) -> f64 {
 
     for (index, digit) in digits.iter().enumerate() {
         let n = character_to_number(*digit);
-        value += n * base.powi(-(index as i32 + 1));
+        value += n * base.powf(-(index as f64 + 1.0));
     }
 
     value
@@ -633,7 +700,7 @@ pub(super) fn characters_to_decimal(base: f64, digits: &[u8]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{token::*, *};
+    use super::*;
 
     struct Test {
         input: String,
@@ -647,28 +714,6 @@ mod tests {
             let result = lex.take();
             assert_eq!(result, test.output);
         }
-    }
-
-    #[test]
-    fn test_lex_keywords() {
-        let tests = vec![
-            Test {
-                input: String::from("if"),
-                output: Ok(Some((
-                    Token::Keyword(Keyword::If),
-                    Span::new(Pos::new(0, 0, 0), Pos::new(1, 1, 0)),
-                ))),
-            },
-            Test {
-                input: String::from("else"),
-                output: Ok(Some((
-                    Token::Keyword(Keyword::Else),
-                    Span::new(Pos::new(0, 0, 0), Pos::new(3, 3, 0)),
-                ))),
-            },
-        ];
-
-        run_tests(tests.as_slice());
     }
 
     #[test]
@@ -758,10 +803,10 @@ mod tests {
                 ))),
             },
             Test {
-                input: String::from("0."),
+                input: String::from("0.1e-1"),
                 output: Ok(Some((
-                    Token::NumberLiteral(NumberLiteral::Decimal(0.0)),
-                    Span::new(Pos::new(0, 0, 0), Pos::new(1, 1, 0)),
+                    Token::NumberLiteral(NumberLiteral::Scientific(0.1, -1.0)),
+                    Span::new(Pos::new(0, 0, 0), Pos::new(5, 5, 0)),
                 ))),
             },
             Test {
@@ -784,24 +829,6 @@ mod tests {
                     Token::NumberLiteral(NumberLiteral::Scientific(10f64, 1f64)),
                     Span::new(Pos::new(0, 0, 0), Pos::new(3, 3, 0)),
                 ))),
-            },
-            Test {
-                input: String::from("0x"),
-                output: Err(MalformedNumber {
-                    span: Span::new(Pos::new(0, 0, 0), Pos::new(1, 1, 0)),
-                }),
-            },
-            Test {
-                input: String::from("0x."),
-                output: Err(MalformedNumber {
-                    span: Span::new(Pos::new(0, 0, 0), Pos::new(2, 2, 0)),
-                }),
-            },
-            Test {
-                input: String::from("0e"),
-                output: Err(MalformedNumber {
-                    span: Span::new(Pos::new(0, 0, 0), Pos::new(1, 1, 0)),
-                }),
             },
         ];
 
@@ -839,42 +866,130 @@ mod tests {
                 ))),
             },
         ];
-
-        run_tests(tests.as_slice());
     }
 
     #[test]
-    fn test_lex_operators() {
-        let tests = vec![
-            Test {
-                input: String::from("+"),
-                output: Ok(Some((
-                    Token::Operator(Operator::Add),
-                    Span::new(Pos::new(0, 0, 0), Pos::new(0, 0, 0)),
-                ))),
-            },
-            Test {
-                input: String::from("//"),
-                output: Ok(Some((
-                    Token::Operator(Operator::FloorDivide),
-                    Span::new(Pos::new(0, 0, 0), Pos::new(1, 1, 0)),
-                ))),
-            },
+    fn test_all_tokens() {
+        let data = include_str!("../../test.lua");
+        let mut lex = Lex::from_slice(data.as_bytes());
+
+        macro_rules! ident {
+            ($ident:expr) => {
+                Token::Identifier(Name(String::from($ident)))
+            };
+        }
+
+        macro_rules! dec {
+            ($value:expr) => {
+                Token::NumberLiteral(NumberLiteral::Decimal($value))
+            };
+        }
+
+        macro_rules! hex {
+            ($value:expr) => {
+                Token::NumberLiteral(NumberLiteral::Hexadecimal($value))
+            };
+        }
+
+        macro_rules! sci {
+            ($value:expr, $exp:expr) => {
+                Token::NumberLiteral(NumberLiteral::Scientific($value, $exp))
+            };
+        }
+
+        macro_rules! str {
+            ($value:expr) => {
+                Token::StringLiteral(StringLiteral::Double(String::from($value)))
+            };
+        }
+
+        macro_rules! lstr {
+            ($value:expr, $size:expr) => {
+                Token::StringLiteral(StringLiteral::Long(String::from($value), $size))
+            };
+        }
+
+        macro_rules! kw {
+            ($v:ident) => {
+                Token::Keyword(Keyword::$v)
+            };
+        }
+
+        macro_rules! ot {
+            ($v:ident($value:expr)) => {
+                Token::Other(Other::$v($value))
+            };
+            ($v:ident) => {
+                Token::Other(Other::$v)
+            };
+        }
+
+        #[rustfmt::skip]
+        let expected = vec![
+            kw!(Local), ident!("t"), ot!(Assign), ot!(CurlyBrace(true)),
+            dec!(1.0), ot!(Comma), dec!(2.0), ot!(SemiColon), dec!(3.0), ot!(CurlyBrace(false)),
+            
+            kw!(Local), ident!("var1"), ot!(Assign), dec!(0.0),
+            ot!(Add), dec!(0.0), ot!(SubtractOrNegate),
+            sci!(0.0, -1.0), ot!(FloatDivide), hex!(0.0),
+            ot!(Multiply), hex!(0.0), ot!(Modulo),
+            dec!(0.12345), ot!(Exponential), sci!(0.31416000000000005, 1.0),
+            ot!(Add), ot!(Length), ident!("t"),
+            ot!(Add), ident!("t"), ot!(Dot), ident!("a"),
+            ot!(Add), ident!("t"), ot!(SquareBrace(true)), str!("a"),
+            ot!(SquareBrace(false)), ot!(Add), ident!("t"), ot!(Colon),
+            ident!("a"), ot!(Paren(true)), ot!(Paren(false)),
+
+            kw!(Local), ident!("var2"), ot!(Assign), str!("Hello, world!"),
+            ot!(Concat), lstr!("Hello, world!", 0), 
+            ot!(Concat), lstr!("Hello, world!", 1),
+            ot!(Concat), lstr!("Hello, world!", 4),
+            
+            kw!(Local), ident!("var3"), ot!(Assign), kw!(Not),
+            ot!(Paren(true)), Token::BooleanLiteral(true), ot!(Equals), 
+            Token::BooleanLiteral(false), ot!(Paren(false)), kw!(And),
+            ot!(Paren(true)), dec!(0.0), ot!(GreaterThanEquals), dec!(0.0),
+            ot!(Paren(false)), kw!(Or), ot!(Paren(true)), dec!(0.0), 
+            ot!(LessThanEquals), dec!(0.0), ot!(Paren(false)), 
+            kw!(And), ot!(Paren(true)), dec!(0.0), 
+            ot!(GreaterThan), dec!(0.0), ot!(Paren(false)),
+            kw!(Or), ot!(Paren(true)), dec!(0.0),
+            ot!(LessThan), dec!(0.0), ot!(Paren(false)),
+            kw!(Or),
+            ot!(Paren(true)), Token::BooleanLiteral(false), ot!(NotEquals),
+            Token::BooleanLiteral(true), ot!(Paren(false)),
+            
+            kw!(If), ident!("t"), kw!(Then),
+            kw!(ElseIf), ident!("t"), ot!(Add), dec!(1.0), kw!(Then),
+            kw!(Else),
+            kw!(End),
+            
+            kw!(For), ident!("k"), ot!(Comma), ident!("v"), kw!(In), ident!("ipairs"),
+            ot!(Paren(true)), ident!("t"), ot!(Paren(false)), kw!(Do),
+            kw!(Break),
+            kw!(End),
+            
+            kw!(While), Token::BooleanLiteral(true), kw!(Do),
+            kw!(Return),
+            kw!(End),
+            
+            kw!(Repeat),
+            kw!(Until),
+            Token::BooleanLiteral(true),
+            
+            kw!(Function), ident!("example"), ot!(Paren(true)),
+            ident!("v1"), ot!(Comma), ident!("v2"), ot!(Comma), ident!("v3"), ot!(Paren(false)),
+            kw!(End),
         ];
 
-        run_tests(tests.as_slice());
-    }
-
-    #[test]
-    fn test_lex_misc() {
-        let tests = vec![Test {
-            input: String::from("("),
-            output: Ok(Some((
-                Token::Paren(true),
-                Span::new(Pos::new(0, 0, 0), Pos::new(0, 0, 0)),
-            ))),
-        }];
-
-        run_tests(tests.as_slice());
+        let mut i = 0;
+        loop {
+            let result = lex.take().expect("failed to take token");
+            match result {
+                Some((token, _)) => assert_eq!(token, expected[i]),
+                None => break,
+            };
+            i += 1;
+        }
     }
 }
